@@ -32,7 +32,7 @@ BasicEventSelection :: BasicEventSelection (std::string className) :
     Algorithm(className),
     m_PU_default_channel(0),
     m_grl(nullptr),
-    m_pileup_tool_handle("CP::PileupReweightingTool/PileupToolName"),
+    m_pileup_tool_handle("CP::PileupReweightingTool/PileupToolName", nullptr),
     m_trigConfTool(nullptr),
     m_trigDecTool(nullptr),
     m_histEventCount(nullptr),
@@ -65,6 +65,10 @@ BasicEventSelection :: BasicEventSelection (std::string className) :
 
   // Metadata
   m_useMetaData = true;
+
+  // Output Stream Names
+  m_metaDataStreamName = "metadata";
+  m_cutFlowStreamName = "cutflow";
 
   // Check for duplicated events in Data and MC
   m_checkDuplicatesData = false;
@@ -124,10 +128,12 @@ EL::StatusCode BasicEventSelection :: setupJob (EL::Job& job)
   // let's initialize the algorithm to use the xAODRootAccess package
   xAOD::Init("BasicEventSelection").ignore(); // call before opening first file
 
-  EL::OutputStream outForCFlow("cutflow");
-  job.outputAdd ( outForCFlow );
-  EL::OutputStream outForMetadata("metadata");
-  job.outputAdd ( outForMetadata );
+
+  EL::OutputStream outForCFlow(m_cutFlowStreamName);
+  if(!job.outputHas(m_cutFlowStreamName) ){job.outputAdd ( outForCFlow );}
+
+  EL::OutputStream outForMetadata(m_metaDataStreamName);
+  if(!job.outputHas(m_metaDataStreamName) ){job.outputAdd ( outForMetadata );}
 
   return EL::StatusCode::SUCCESS;
 }
@@ -145,7 +151,7 @@ EL::StatusCode BasicEventSelection :: histInitialize ()
   RETURN_CHECK("xAH::Algorithm::algInitialize()", xAH::Algorithm::algInitialize(), "");
 
   // write the metadata hist to this file so algos downstream can pick up the pointer
-  TFile *fileMD = wk()->getOutputFile ("metadata");
+  TFile *fileMD = wk()->getOutputFile (m_metaDataStreamName);
   fileMD->cd();
 
   // event counts from meta data
@@ -350,7 +356,7 @@ EL::StatusCode BasicEventSelection :: initialize ()
 
   // write the cutflows to this file so algos downstream can pick up the pointer
   //
-  TFile *fileCF = wk()->getOutputFile ("cutflow");
+  TFile *fileCF = wk()->getOutputFile (m_cutFlowStreamName);
   fileCF->cd();
 
   // Note: the following code is needed for anyone developing/running in ROOT 6.04.10+
@@ -437,8 +443,6 @@ EL::StatusCode BasicEventSelection :: initialize ()
 
   if ( m_doPUreweighting ) {
 
-    RETURN_CHECK("BasicEventSelection::initialize()", m_pileup_tool_handle.make("CP::PileupReweightingTool/Pileup"), "Failed to create handle to CP::PileupReweightingTool");;
-
     std::vector<std::string> PRWFiles;
     std::vector<std::string> lumiCalcFiles;
 
@@ -469,15 +473,17 @@ EL::StatusCode BasicEventSelection :: initialize ()
         tmp_lumiCalcFileNames.erase(0, pos+1);
       }
     }
-    Info("initialize()", "CP::PileupReweightingTool is adding Pileup files:");
+    Info("initialize()", "Adding Pileup files for CP::PileupReweightingTool:");
     for( unsigned int i=0; i < PRWFiles.size(); ++i){
       printf( "\t %s \n", PRWFiles.at(i).c_str() );
     }
-    Info("initialize()", "CP::PileupReweightingTool is adding LumiCalc files:");
+    Info("initialize()", "Adding LumiCalc files for CP::PileupReweightingTool:");
     for( unsigned int i=0; i < lumiCalcFiles.size(); ++i){
       printf( "\t %s \n", lumiCalcFiles.at(i).c_str() );
     }
 
+    RETURN_CHECK("BasicEventSelection::initialize()", checkToolStore<CP::PileupReweightingTool>("Pileup"), "" );
+    RETURN_CHECK("BasicEventSelection::initialize()", m_pileup_tool_handle.makeNew<CP::PileupReweightingTool>("CP::PileupReweightingTool/Pileup"), "Failed to create handle to CP::PileupReweightingTool");
     RETURN_CHECK("BasicEventSelection::initialize()", m_pileup_tool_handle.setProperty("ConfigFiles", PRWFiles), "");
     RETURN_CHECK("BasicEventSelection::initialize()", m_pileup_tool_handle.setProperty("LumiCalcFiles", lumiCalcFiles), "");
     if ( m_PU_default_channel ) {
